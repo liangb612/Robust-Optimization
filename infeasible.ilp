@@ -1,0 +1,21 @@
+\ Model submodel_copy
+\ LP format - for model browsing. Use MPS format to capture full model detail.
+\ Signature: 0xda1eefbd77f46720
+Minimize
+ 
+Subject To
+ R370: 水电出力[0,10] <= 280
+ R418: 储能放电功率[0,10] <= 0
+ R469: 风电出力[0,10] <= 69.3
+ R493: 光电出力[0,10] <= 35.1
+ R565: C418 = 1110
+ R589: - 水电出力[0,10] + 储能充电功率[0,10]
+   - 储能放电功率[0,10] - 风电出力[0,10] - 光电出力[0,10]
+   - C418 <= -1506.96
+Bounds
+ 水电出力[0,10] free
+ 储能放电功率[0,10] free
+ 风电出力[0,10] free
+ 光电出力[0,10] free
+ C418 free
+End

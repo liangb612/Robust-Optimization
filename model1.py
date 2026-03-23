@@ -16,12 +16,12 @@ def mainProblem_init(model1,uin):
                     89,77,54,52,80,82,107,144,185,163,221,215,
                     240,223,190,]
                   ).reshape(1,24)
-  pv_f = np.array(
+  pv_f = 10*np.array(
           [0,0,0,0,0,2.2000,5.5000,17.0000,28.6000,32.0000,39.0000,42.6000,42.0000,
             41.6000,40.5000,41.2000,36.5000,28.0000,16.0000,6.6000,1.1000,0,
             0,0,]
                 ).reshape(1,24)
-  pload = np.array(
+  pload = 0.5*np.array(
           [945,845,745,780,998,1095,1147,1199,1300,1397,1449,1498,1397,1297,
           1197,1048,1000,1100,1202,1375,1298,1101,900,800,]
                   )#双峰负荷曲线
@@ -71,6 +71,7 @@ def mainProblem_init(model1,uin):
   model1.addConstrs((p_g[i,j]<=u_g[i,j]*p_g_max[i] for i in range(n_g) for j in range(T)))
   model1.addConstrs((p_g[i,j]>=u_g[i,j]*p_g_min[i] for i in range(n_g) for j in range(T)))
   model1.addConstrs((p_g[i,j]-p_g[i,j-1]<=remp_u_d[i] for i in range(n_g) for j in range(T)))
+  model1.addConstrs((p_g[i,j-1]-p_g[i,j]<=remp_u_d[i] for i in range(n_g) for j in range(T)))  
   for i in range(n_g):
     for t in range(T):
       if t==0:
@@ -124,8 +125,8 @@ def mainProblem_init(model1,uin):
 
   #风光电：
   F = 12#保守性调节常量
-  d_p_w_max = 0.4#箱式边界系数
-  d_p_v_max = 0.4
+  d_p_w_max = 0.1#箱式边界系数
+  d_p_v_max = 0.1
   #变量：
   p_w = model1.addMVar((1,T),vtype=GRB.CONTINUOUS,lb = 0,name="风电出力")
   p_v = model1.addMVar((1,T),vtype=GRB.CONTINUOUS,lb = 0,name="光电出力")

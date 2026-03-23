@@ -1,15 +1,18 @@
+from scipy.ndimage import label
+from matplotlib.legend import Legend
+from scipy.constants import h
 import gurobipy as gp
 import numpy as np
 import matplotlib.pyplot as plt
 import model1
 import model3
-import model2
+
 
 def main():
     modelm = gp.Model("robust")
     models = gp.Model("submodel")
-    u_w_init = np.hstack((np.ones((1,12)),np.zeros((1,12))))
-    u_v_init = np.hstack((np.ones((1,12)),np.zeros((1,12))))
+    u_w_init = np.hstack((np.zeros((1,12)),np.ones((1,12))))
+    u_v_init = np.hstack((np.zeros((1,12)),np.ones((1,12))))
     uin_init = {
         "uw":u_w_init,
         "uv":u_v_init
@@ -17,9 +20,9 @@ def main():
    # print(f"u_w_init:{u_w_init}")
     #print(f"u_v_init:{u_v_init}")
     uout = model1.mainProblem_init(modelm,uin_init)
-    pmin = model3.mainProblem_iterate_min(models,uout,uin_init)
-    #print(f"pmin:{pmin}")
-    uin = model2.mainProblem_iterate_max(models,uout,pmin)
+    uin = model3.mainProblem_iterate_min(models,uout)
+    print(f"内层kkt条件的优化结果:\n{uin}")
+    '''
     #print(f"UBin:{uin}")
     pmin = model3.mainProblem_iterate_min(models,uout,uin)
     while abs(pmin["LBin"]-uin["UBin"])>=200 :
@@ -59,21 +62,8 @@ def main():
         "#bcbd22",
         "#17becf",
     ]
-    for i, data in enumerate(tt):
-        if (data[d] >= 0 for d in range(len(data))):
-            plt.bar(
-                range(len(data)), data, bottom=bottom, color=colors[i % len(colors)]
-            )
-            bottom += data
-
-        if i == 6:
-            plt.bar(range(len(data)), data, bottom=0, color=colors[i % len(colors)])
-            plt.bar(
-                range(len(data)), 0, bottom=bottom, color=colors[i % len(colors)]
-            )
-            # 设置图例和标签
-    plt.legend(
-        [
+     # 设置图例和标签
+    legends=[
             "thermal generator1",
             "thermal generator2",
             "thermal generator3",
@@ -85,7 +75,27 @@ def main():
             "wind power",
             "photovoltaic",
         ]
-    )
+    for i, data in enumerate(tt):
+        if (data>=0).all():
+            plt.bar(
+                x=range(len(data)), 
+                height=data, 
+                bottom=bottom, 
+                color=colors[i % len(colors)],
+                label=legends[i%len(legends)]
+            )
+            bottom += data
+
+        if (data<=0).all():
+            plt.bar(
+            x=range(len(data)), 
+            height=data, 
+            bottom=0, 
+            color=colors[i % len(colors)],
+            label=legends[i%len(legends)]
+            )
+
+    plt.legend()
     plt.ylim(-100, 1800)
     plt.xlabel("T")
     plt.ylabel("Power (MW)")
@@ -93,6 +103,6 @@ def main():
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
-
+'''
 if __name__ == "__main__":
     main()

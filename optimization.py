@@ -22,13 +22,10 @@ def main():
     uout = model1.mainProblem_init(modelm,uin_init)
     uin = model3.mainProblem_iterate_min(models,uout)
     print(f"内层kkt条件的优化结果:\n{uin}")
-    '''
     #print(f"UBin:{uin}")
-    pmin = model3.mainProblem_iterate_min(models,uout,uin)
-    while abs(pmin["LBin"]-uin["UBin"])>=200 :
-        uin = model2.mainProblem_iterate_max(models,uout,pmin)
-        pmin = model3.mainProblem_iterate_min(models,uout,uin)
-    uout = model1.mainProblem_init(modelm,uin)
+    while abs(uout["LB"]-uin["UBin"])>=2000 :
+        uout = model1.mainProblem_init(modelm,uin)
+        uin = model3.mainProblem_iterate_min(models,uout)
     print("_______________________________________________________________")
     print(uout)
     tt = np.vstack(
@@ -103,6 +100,6 @@ def main():
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
-'''
+
 if __name__ == "__main__":
     main()

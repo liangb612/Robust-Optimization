@@ -195,3 +195,61 @@ def mainProblem_iterate_max(model1,uout,pmin):
     }
     print(rst)
     return(rst)
+
+
+
+
+
+
+     #储能对偶变量：
+  #储能SOC约束为初始时刻、23个递推约束、初末状态相等约束总共25个
+  dl_soc_max = model1.addMVar((1,24),vtype=GRB.CONTINUOUS,lb=0,name= "储能上限对偶")
+  dl_soc_min = model1.addMVar((1,24),vtype=GRB.CONTINUOUS,lb=0,name = "储能下限对偶")
+  dl_soc = model1.addMVar((1,25),vtype=GRB.CONTINUOUS,name= "储能soc约束对偶变量")
+  dl_p_ch_max = model1.addMVar(shape=(1,24),vtype=GRB.CONTINUOUS,lb=0,name="充电功率上限对偶")
+  dl_p_ch_min= model1.addMVar(shape=(1,24),vtype=GRB.CONTINUOUS,lb=0,name = "充电功率下限对偶")
+  dl_p_dis_max = model1.addMVar(shape=(1,24),vtype=GRB.CONTINUOUS,lb=0,name="放电功率上限对偶")
+  dl_p_dis_min= model1.addMVar(shape=(1,24),vtype=GRB.CONTINUOUS,lb=0,name = "放电功率下限对偶")
+  #储能互补松弛：
+  z_lch  = model1.addMVar((1,T), vtype=GRB.BINARY, name="z_lch")
+  z_ldis = model1.addMVar((1,T), vtype=GRB.BINARY, name="z_ldis")
+  z_au   = model1.addMVar((1,T), vtype=GRB.BINARY, name="z_au")
+  z_al   = model1.addMVar((1,T), vtype=GRB.BINARY, name="z_al")
+  z_bch  = model1.addMVar((1,T), vtype=GRB.BINARY, name="z_bch")
+  z_bdis = model1.addMVar((1,T), vtype=GRB.BINARY, name="z_bdis")
+  for t in range(T):
+      # --- λ_ch * (p_ch - p_s_max * u_ch) = 0 ---
+      model1.addConstr(dl_p_ch_max[0,t] <= M * z_lch[0,t])
+      model1.addConstr(p_ch[0,t] - p_s_max * u_ch[0,t] >= -M * (1 - z_lch[0,t]))
+      model1.addConstr(p_ch[0,t] - p_s_max * u_ch[0,t] <=  M * (1 - z_lch[0,t]))
+      # --- λ_dis * (p_dis - p_s_max * u_dis) = 0 ---
+      model1.addConstr(dl_p_dis_max[0,t] <= M * z_ldis[0,t])
+      model1.addConstr(p_dis[0,t] - p_s_max * u_dis[0,t] >= -M * (1 - z_ldis[0,t]))
+      model1.addConstr(p_dis[0,t] - p_s_max * u_dis[0,t] <=  M * (1 - z_ldis[0,t]))
+      # --- α_u * (soc - soc_max) = 0 ---
+      model1.addConstr(dl_soc_max[0,t] <= M * z_au[0,t])
+      model1.addConstr(soc[0,t] - socmax >= -M * (1 - z_au[0,t]))
+      model1.addConstr(soc[0,t] - socmax <=  M * (1 - z_au[0,t]))
+      # --- α_l * (soc - soc_min) = 0 ---
+      model1.addConstr(dl_soc_min[0,t] <= M * z_al[0,t])
+      model1.addConstr(soc[0,t] - socmin >= -M * (1 - z_al[0,t]))
+      model1.addConstr(soc[0,t] - socmin <=  M * (1 - z_al[0,t]))
+      # --- β_ch * p_ch = 0 ---
+      model1.addConstr(dl_p_ch_min[0,t] <= M * z_bch[0,t])
+      model1.addConstr(p_ch[0,t]    <= M * (1 - z_bch[0,t]))
+      # --- β_dis * p_dis = 0 ---
+      model1.addConstr(dl_p_dis_min[0,t] <= M * z_bdis[0,t])
+      model1.addConstr(p_dis[0,t]    <= M * (1 - z_bdis[0,t]))
+
+  #储能平稳性
+  for t in range(T):
+    if t==0:
+      model1.addConstr(-dl_soc[0,0]+dl_soc[0,1]*(1-theta)+dl_soc_max[0,0]-dl_soc_min[0,0]==0)
+    elif t==23:
+      model1.addConstr(-dl_soc[0,23]+dl_soc[0,24]+dl_soc_max[0,23]-dl_soc_min[0,23]==0)
+    else:
+      model1.addConstr(-dl_soc[0,t]+dl_soc[0,t+1]*(1-theta)+dl_soc_max[0,t]-dl_soc_min[0,t]==0)
+  for t in range(T):
+    model1.addConstr(dl_p_ch_max[0,t]-dl_p_ch_min[0,t]+kees*yita+u_ch[0,t]*yita/capmax*dl_soc[0,t]+dl_peq[0,t]+dl_prot[0,t]==0)
+    model1.addConstr(dl_p_dis_max[0,t]-dl_p_dis_min[0,t]+kees/yita - u_dis[0,t]/yita/capmax*dl_soc[0,t] - dl_peq[0,t]-dl_prot[0,t]==0)
+  

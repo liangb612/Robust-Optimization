@@ -16,12 +16,12 @@ def mainProblem_init(model1,uin):
                     89,77,54,52,80,82,107,144,185,163,221,215,
                     240,223,190,]
                   ).reshape(1,24)
-  pv_f = 10*np.array(
+  pv_f = np.array(
           [0,0,0,0,0,2.2000,5.5000,17.0000,28.6000,32.0000,39.0000,42.6000,42.0000,
             41.6000,40.5000,41.2000,36.5000,28.0000,16.0000,6.6000,1.1000,0,
             0,0,]
                 ).reshape(1,24)
-  pload = 0.5*np.array(
+  pload = np.array(
           [945,845,745,780,998,1095,1147,1199,1300,1397,1449,1498,1397,1297,
           1197,1048,1000,1100,1202,1375,1298,1101,900,800,]
                   )#双峰负荷曲线
@@ -38,10 +38,10 @@ def mainProblem_init(model1,uin):
   lamda = np.array([0.94, 0.94, 0.94, 0.94, 1.03])
   # 储能模型中的常量
   capmax = 400
-  p_s_max = 100
+  p_s_max = 200
   p_s_min= 0
   socmax = 0.9#储能电量百分比
-  socmin = 0.2
+  socmin = 0.1
   theta = 0.01
   yita = 0.95
   kees = 0.009
@@ -70,8 +70,13 @@ def mainProblem_init(model1,uin):
 
   model1.addConstrs((p_g[i,j]<=u_g[i,j]*p_g_max[i] for i in range(n_g) for j in range(T)))
   model1.addConstrs((p_g[i,j]>=u_g[i,j]*p_g_min[i] for i in range(n_g) for j in range(T)))
-  model1.addConstrs((p_g[i,j]-p_g[i,j-1]<=remp_u_d[i] for i in range(n_g) for j in range(T)))
-  model1.addConstrs((p_g[i,j-1]-p_g[i,j]<=remp_u_d[i] for i in range(n_g) for j in range(T)))  
+  for i in range(n_g):
+    for t in range(T):
+      if(t==0):
+        model1.addConstr(p_g[i,t]<=remp_u_d[i])#初值设为0
+      else:  
+        model1.addConstr(p_g[i,t]-p_g[i,t-1]<=remp_u_d[i])
+        model1.addConstr(p_g[i,t-1]-p_g[i,t]<=remp_u_d[i])
   for i in range(n_g):
     for t in range(T):
       if t==0:
@@ -102,7 +107,6 @@ def mainProblem_init(model1,uin):
   # 约束：
   model1.addConstr(p_h<=p_h_max)
   # 成本：无
-
   #储能：
   soc0 = 0.5
   # 变量：
@@ -114,15 +118,15 @@ def mainProblem_init(model1,uin):
 #约束：
   model1.addConstr(p_ch<=p_s_max*u_ch)
   model1.addConstr(p_dis<=p_s_max*u_dis)
-  model1.addConstr(soc[0,0] == soc0*(1-theta)+u_ch[0,0]*yita*p_ch[0,0]/capmax-u_dis[0,0]/yita*p_dis[0,0]/capmax)
+  model1.addConstr(soc[0,0] == soc0*(1-theta)+yita*p_ch[0,0]/capmax-p_dis[0,0]/yita/capmax)
   for t in range(1,T):
-    model1.addConstr(soc[0,t] == soc[0,t-1]*(1-theta)+u_ch[0,t]*p_ch[0,t]*yita/capmax-u_dis[0,t]*p_dis[0,t]/yita/capmax)
+    model1.addConstr(soc[0,t] == soc[0,t-1]*(1-theta)+p_ch[0,t]*yita/capmax-p_dis[0,t]/yita/capmax)
   model1.addConstr(u_ch+u_dis<=1)
   model1.addConstr(u_ch+u_dis>=0)
   model1.addConstr(soc[0,23]==soc0)
   #成本：维护成本
   c_ees = kees*gp.quicksum(p_ch[0,t].item()*yita+p_dis[0,t].item()/yita for t in range(T))
-
+  
   #风光电：
   F = 12#保守性调节常量
   d_p_w_max = 0.1#箱式边界系数
@@ -145,7 +149,7 @@ def mainProblem_init(model1,uin):
   c_wv=0
   for t in range(T):
     c_wv +=c_wvt[0,t]
-
+  
   #负载模糊清晰化
   p_l_b = ((1 - alpha) * w_l[0] / 2+ w_l[1] / 2+ w_l[2] * alpha / 2) * pload
   print(f"plb:{p_l_b}")
@@ -157,11 +161,13 @@ def mainProblem_init(model1,uin):
   for t in range(24):
       p_g_i_temp = gp.quicksum(p_g[n, t].item() for n in range(n_g))
       model1.addConstr(p_g_i[0,t]== p_g_i_temp)
+  #model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_h-p_g_i==0)
   model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_h-p_g_i==0)
 
   for t in range(24):
       pgmaxsum_temp = gp.quicksum(u_g[n, t].item() * p_g_max[n] for n in range(n_g))
       model1.addConstr(pgmaxsum[0,t] == pgmaxsum_temp)
+  #model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_h-pgmaxsum<=0)
   model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_h-pgmaxsum<=0)
   '''
   ------------------------------------------------------------------
@@ -191,11 +197,12 @@ def mainProblem_init(model1,uin):
     rst ={ 
             "p_g":p_g.X,
             "p_h":p_h.X,
-            "p_w":p_w.X,
+           "p_w":p_w.X,
             "p_v":p_v.X,
             "p_ch":p_ch.X,
             "p_dis":p_dis.X,
             "soc":soc.X,
+
             "ustart":U_start,
             "ustop":U_stop,
             "ug":U_g,

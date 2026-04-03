@@ -5,7 +5,9 @@ import gurobipy as gp
 import numpy as np
 import matplotlib.pyplot as plt
 import model1
+import model2
 import model3
+from gurobipy import GRB
 
 
 def main():
@@ -19,15 +21,22 @@ def main():
     }
    # print(f"u_w_init:{u_w_init}")
     #print(f"u_v_init:{u_v_init}")
-    uout = model1.mainProblem_init(modelm,uin_init)
+    uout = model1.mainProblem_init(modelm,uin_init,0)
     uin = model3.mainProblem_iterate_min(models,uout)
     print(f"内层kkt条件的优化结果:\n{uin}")
-    #print(f"UBin:{uin}")
-    while abs(uout["LB"]-uin["UBin"])>=2000 :
-        uout = model1.mainProblem_init(modelm,uin)
+    print(f"LBout:{uout}")
+    
+    while abs(uout["LB"]-uin["UBin"])>=1000 :
+        ubLast = uin["UBin"]
+        o=1
+        addCons = model2.mainProblemAddConstration(modelm,uin,o,uout)
+        uout = addCons.rst
         uin = model3.mainProblem_iterate_min(models,uout)
+        print(f"~~~~~~~上界更新为：{uin["UBin"]}")
+        o+=1
     print("_______________________________________________________________")
     print(uout)
+    
     tt = np.vstack(
         [
             uout["p_g"][0,:],  
@@ -99,7 +108,13 @@ def main():
     plt.title("Contribution of the Source")
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.show()
 
+    plt.figure()
+    soc = uout["soc"]
+    x = np.array(list(range(24)))
+    plt.plot(x,soc[0],label="soc")
+    plt.grid(True)
+    plt.show()
+    
 if __name__ == "__main__":
     main()

@@ -8,6 +8,7 @@ import model1
 import model2
 import model3
 from gurobipy import GRB
+import pandas as pd
 
 
 def main():
@@ -26,7 +27,7 @@ def main():
     print(f"内层kkt条件的优化结果:\n{uin}")
     print(f"LBout:{uout}")
     
-    while abs(uout["LB"]-uin["UBin"])>=1000 :
+    while abs(uout["LB"]-uin["UBin"])>=100 :
         ubLast = uin["UBin"]
         o=1
         addCons = model2.mainProblemAddConstration(modelm,uin,o,uout)
@@ -81,6 +82,9 @@ def main():
             "wind power",
             "photovoltaic",
         ]
+    #保存数据
+    df = pd.DataFrame(tt,columns=range(24),index=legends)
+    df.to_csv("output.csv",index=True)
     for i, data in enumerate(tt):
         if (data>=0).all():
             plt.bar(

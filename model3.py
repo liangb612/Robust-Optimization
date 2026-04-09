@@ -224,10 +224,9 @@ def mainProblem_iterate_min(model1:gp.Model,uout:dict):
       else:
         D_lagrange_p_g = a[i]*p_g[i,t]+b[i]+dl_p_g_max[i,t]-dl_p_g_min[i,t]+dl_remp_g_max[i,t]-dl_remp_g_max[i,t+1]-dl_remp_g_min[i,t]+dl_remp_g_min[i,t+1]-dl_peq[0,t]
       model1.addConstr(D_lagrange_p_g==0)  
-  '''    
   #水电平稳性：
   model1.addConstr(dl_ph_max-dl_ph_min-dl_prot-dl_peq==0)
-  '''
+  
   
   #储能
   dl_p_ch_max   = model1.addMVar((1,T), lb=0,name="储能充电上限约束对偶")
@@ -259,10 +258,10 @@ def mainProblem_iterate_min(model1:gp.Model,uout:dict):
   "!!!!!!!!!!!!!!!!!!!!!下面的储能稳定性约束是问题的来源!!!!!!!!!!!!!!!!!!!!!!"
   
   # 对 soc_t 的稳定性（t < T-1）
-  for t in range(1,T-1):
+  for t in range(0,T-2):
       model1.addConstr(
-          dl_soc[0,t-1] 
-          - dl_soc[0,t] * (1 - theta) 
+          dl_soc[0,t] 
+          - dl_soc[0,t+1] * (1 - theta) 
           + dl_soc_max[0,t] 
           - dl_soc_min[0,t] == 0,
           name=f"stat_soc_{t}"
@@ -271,7 +270,9 @@ def mainProblem_iterate_min(model1:gp.Model,uout:dict):
   # 对 soc_{T-1} 的平稳性
   model1.addConstr(
       dl_soc[0,T-1] 
-      + dl_soc_blc == 0,
+      + dl_soc_blc
+      + dl_soc_max[0,T-1] 
+      - dl_soc_min[0,T-1] == 0,
       name="stat_soc_T"
   )
   

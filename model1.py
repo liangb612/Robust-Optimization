@@ -6,30 +6,29 @@ from gurobipy import GRB
 主问题的优化变量为x和y，固定的优化变量为u,每次子问题都会更新与u有关的约束
 '''
 def mainProblem_init(model1:gp.Model,uin:dict,o):
+  print(f"内层场景：~~~~~{uin}")
   '''
   已知参数
   '''
   alpha = 0.9
   w_l = np.array([0.9, 1, 1.1])
   pw_f = np.array(
-    [188,237,188,181,204,156,174,186,118,
-                    89,77,54,52,80,82,107,144,185,163,221,215,
-                    240,223,190,]
+    [680,720,850,600,750,800,780,700,650,580,500,450,400,380,420,550,620,750,820,900,950,880,800,760]
                   ).reshape(1,24)
   pv_f = np.array(
-          [0,0,0,0,0,2.2000,5.5000,17.0000,28.6000,32.0000,39.0000,42.6000,42.0000,
-            41.6000,40.5000,41.2000,36.5000,28.0000,16.0000,6.6000,1.1000,0,
-            0,0,]
+          [0,0,0,0,0,0,50,180,350,520,680,690,800,780,650,480,280,100,20,0,0,0,0,0]
                 ).reshape(1,24)
   pload =np.array(
-          [945,845,745,780,998,1095,1147,1199,1300,1397,1449,1498,1397,1297,
-          1197,1048,1000,1100,1202,1375,1298,1101,900,800,]
+          [850,780,750,760,820,900,1050 ,1180,1250,1200,980,920,880,860,900,950,1020,1150,1280,1320,1300,1200,1100,950]
                   )#双峰负荷曲线
-  p_g_min = np.array([200, 200, 150, 120, 70])
-  p_g_max = np.array([460, 400, 350, 300, 150])
-  p_h_max = 280
-  remp_u_d = np.array([240, 210, 150, 120, 70])  # >=pgmin
-  t_on_and_off = np.array([8, 7, 6, 4, 3])
+  p_g_min = 0.25*np.array([200, 200, 150, 120, 70])
+  p_g_max = 0.25*np.array([460, 400, 350, 300, 150])
+  '''
+  交易
+  '''
+  p_m_max = 1000
+  remp_u_d = 0.25*np.array([240, 210, 150, 120, 70])  # >=pgmin
+  t_on_and_off = np.array([3, 3, 3, 3, 3])
   a = 1e-5 * np.array([1.02, 1.21, 2.17, 3.42, 6.63])
   b = np.array([0.277, 0.288, 0.29, 0.292, 0.306])
   c = np.array([9.2, 8.8, 7.2, 5.2, 3.5])
@@ -37,8 +36,8 @@ def mainProblem_init(model1:gp.Model,uin:dict,o):
   e = np.array([0.877, 0.877, 0.877, 0.877, 0.979])
   lamda = np.array([0.94, 0.94, 0.94, 0.94, 1.03])
   # 储能模型中的常量
-  capmax = 800
-  p_s_max = 200
+  capmax =800
+  p_s_max =200
   p_s_min= 0
   socmax = 0.9#储能电量百分比
   socmin = 0.2
@@ -46,10 +45,12 @@ def mainProblem_init(model1:gp.Model,uin:dict,o):
   yita = 0.95
   kees = 0.009
   # 碳交易
-  w = 50
-  d = 100
-  tao = 0.25
-  #碳排放因子
+  #二次碳惩罚因子50块
+
+  #碳排放因子,依次为火电，电网，碳排放因子数据来自
+  #国家温室气体排放因子数据库：https://data.ncsc.org.cn/factories/index
+
+  coef = np.array([0.72,0.5306])
   #___________
   # 循环控制变量
   # 时间
@@ -104,12 +105,24 @@ def mainProblem_init(model1:gp.Model,uin:dict,o):
         c_u =c_u+ sit[i]*(u_start[i,t]+u_stop[i,t])
         c_g +=c_gi
     
-    #水电：
+    #电市场交易：
     #变量：
-    p_h = model1.addMVar((1,T),vtype=GRB.CONTINUOUS,lb=0,name = "水电出力")
-    # 约束：
-    model1.addConstr(p_h<=p_h_max)
-    # 成本：无
+    p_buy = model1.addMVar((1,T),vtype=GRB.CONTINUOUS,name = "电交易出力")
+    p_sell = model1.addMVar((1,T),vtype=GRB.CONTINUOUS,name = "电交易出力")
+    u_buy = model1.addMVar((1,T),vtype=GRB.BINARY,name = "电交易出力")
+    u_sell = model1.addMVar((1,T),vtype=GRB.BINARY,name = "电交易出力")
+    #联络线约束
+    model1.addConstr(-p_buy<=0)
+    model1.addConstr(p_buy<=p_m_max*u_buy)
+    model1.addConstr(-p_sell<=0)
+    model1.addConstr(p_sell<=p_m_max*u_sell)
+    model1.addConstr(u_sell+u_buy<=1)
+    #联络线平稳性约束
+
+    # 成本：
+    c_m=0
+    for t in range(T):
+      c_m +=50*p_buy[0,t]+10*p_sell[0,t]
     
     #储能：
     soc_init = 0.5
@@ -150,7 +163,7 @@ def mainProblem_init(model1:gp.Model,uin:dict,o):
     model1.addConstr(p_w == pw_f-u_w*d_p_w_max*pw_f)
     model1.addConstr(p_v == pv_f-u_v*d_p_v_max*pv_f)
     #成本:主要是弃风光惩罚
-    c_wvt = 500*(pw_f-p_w)+500*(pv_f-p_v)
+    c_wvt = 50*(pw_f-p_w)+50*(pv_f-p_v)
     c_wv=0
     for t in range(T):
       c_wv +=c_wvt[0,t]
@@ -168,19 +181,31 @@ def mainProblem_init(model1:gp.Model,uin:dict,o):
         p_g_i_temp = gp.quicksum(p_g[n, t].item() for n in range(n_g))
         model1.addConstr(p_g_i[0,t]== p_g_i_temp)
     #model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_h-p_g_i==0)
-    model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_h-p_g_i==0)
+    model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_buy+p_sell-p_g_i==0)
     
     for t in range(24):
         pgmaxsum_temp = gp.quicksum(u_g[n, t].item() * p_g_max[n] for n in range(n_g))
         model1.addConstr(pgmaxsum[0,t] == pgmaxsum_temp)
-    #model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_h-pgmaxsum<=0)
-    model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_h-pgmaxsum<=0)
+    model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_buy+p_sell-pgmaxsum<=0)
+
+    #碳排放配额补足交易,考虑使用二次项近似谈阶梯价格，然后再线性化，提升估算精度，单位为天
+    EF_c = model1.addVar(vtype=GRB.CONTINUOUS,name = "碳排放补足量")
+    #EF_c_2 = model1.addVar(vtype=GRB.CONTINUOUS,name = "碳排放补足量二次项")
+    #lxefc2=np.linspace(start =0,stop=500,num=11).reshape(1,-1)
+    #lyefc2 = lxefc2**2
+    
+    #model1.addGenConstrPWL(EF_c,EF_c_2 , lxefc2[0],lyefc2[0])
+    model1.addConstr(EF_c>=0)
+    model1.addConstr(EF_c<=500)
+    #碳排放约束，补足量使得碳排放量达到零碳园区的水平
+    EF = gp.quicksum((coef[0]-0.0246)*p_g_i[0,t]+(coef[1]-0.0246)*p_buy[0,t]-(coef[1]-0.0246)*p_sell[0,t]-0.0246*p_w[0,t]-0.0246*p_v[0,t]-EF_c  for t in range(24))
+    model1.addConstr(EF==0)
 
     '''
     ------------------------------------------------------------------
     '''
     C = model1.addVar(1,vtype=GRB.CONTINUOUS,name="子问题最恶劣场景下的成本c")
-    model1.addConstr( C >=c_ees+c_g+c_wv)
+    model1.addConstr( C >=c_ees+c_g+c_wv+EF_c*5+c_m)
     '''
     -------------------------------------------------------------------
     '''
@@ -203,9 +228,11 @@ def mainProblem_init(model1:gp.Model,uin:dict,o):
     U_dis = u_dis.X
     LB = model1.ObjVal
     np.set_printoptions(formatter={'float_kind': '{:.2f}'.format})
+    print(f" 碳补足的量{EF_c.X}")
     rst ={ 
             "p_g":p_g.X,
-            "p_h":p_h.X,
+            "p_buy":p_buy.X,
+            "p_sell":p_sell.X,
             "p_ch":p_ch.X,
             "p_dis":p_dis.X,
             "soc":soc.X,
@@ -217,7 +244,9 @@ def mainProblem_init(model1:gp.Model,uin:dict,o):
             "ug":U_g,
             "uch":U_ch,
             "udis":U_dis,
+            "ubuy":u_buy.X,
+            "usell":u_sell.X,
             "LB":LB,
-            "C":C
+            "C":C.X
     }
     return (rst)

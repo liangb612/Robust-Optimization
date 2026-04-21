@@ -24,19 +24,25 @@ def main():
     #print(f"u_v_init:{u_v_init}")
     uout = model1.mainProblem_init(modelm,uin_init,0)
     uin = model3.mainProblem_iterate_min(models,uout)
-    print(f"内层kkt条件的优化结果:\n{uin}")
-    print(f"LBout:{uout}")
-    
+    while abs(uout["LB"]-uin["UBin"])>=4000 :
+        uout = model1.mainProblem_init(modelm,uin,0)
+        if abs(uout["LB"]-uin["UBin"])>=4000:
+            break
+        uin = model3.mainProblem_iterate_min(models,uout)
+    '''
     while abs(uout["LB"]-uin["UBin"])>=100 :
         ubLast = uin["UBin"]
         o=1
-        addCons = model2.mainProblemAddConstration(modelm,uin,o,uout)
-        uout = addCons.rst
+        #addCons = model2.mainProblemAddConstration(modelm,uin,o,uout)
+        #uout = addCons.rst
+        uout = model1.mainProblem_init(modelm,uin,0)
         uin = model3.mainProblem_iterate_min(models,uout)
+
         print(f"~~~~~~~上界更新为：{uin["UBin"]}")
         o+=1
     print("_______________________________________________________________")
-    print(uout)
+    '''
+    #print(uout)
     
     tt = np.vstack(
         [
@@ -45,7 +51,7 @@ def main():
             uout["p_g"][2,:],  
             uout["p_g"][3,:],  
             uout["p_g"][4,:],  
-            uout["p_h"],
+            uout["p_buy"],
             -uout["p_ch"],
             uout["p_dis"],
             uout["p_w"],
@@ -82,9 +88,12 @@ def main():
             "wind power",
             "photovoltaic",
         ]
+
+    '''    
     #保存数据
     df = pd.DataFrame(tt,columns=range(24),index=legends)
-    df.to_csv("output.csv",index=True)
+    df.to_csv("output1.csv",index=True)
+    '''
     for i, data in enumerate(tt):
         if (data>=0).all():
             plt.bar(
@@ -106,7 +115,7 @@ def main():
             )
 
     plt.legend()
-    plt.ylim(-100, 1800)
+    plt.ylim(-200, 1800)
     plt.xlabel("T")
     plt.ylabel("Power (MW)")
     plt.title("Contribution of the Source")

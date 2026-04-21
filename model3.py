@@ -11,24 +11,19 @@ def mainProblem_iterate_min(model1:gp.Model,uout:dict):
   alpha = 0.9
   w_l = np.array([0.9, 1, 1.1])
   pw_f = np.array(
-    [188,237,188,181,204,156,174,186,118,
-                    89,77,54,52,80,82,107,144,185,163,221,215,
-                    240,223,190,]
+    [680,720,850,600,750,800,780,700,650,580,500,450,400,380,420,550,620,750,820,900,950,880,800,760]
                   ).reshape(1,24)
   pv_f = np.array(
-          [0,0,0,0,0,2.2000,5.5000,17.0000,28.6000,32.0000,39.0000,42.6000,42.0000,
-            41.6000,40.5000,41.2000,36.5000,28.0000,16.0000,6.6000,1.1000,0,
-            0,0,]
+          [0,0,0,0,0,0,50,180,350,520,680,690,800,780,650,480,280,100,20,0,0,0,0,0]
                 ).reshape(1,24)
   pload = np.array(
-          [945,845,745,780,998,1095,1147,1199,1300,1397,1449,1498,1397,1297,
-          1197,1048,1000,1100,1202,1375,1298,1101,900,800,]
+          [850,780,750,760,820,900,1050 ,1180,1250,1200,980,920,880,860,900,950,1020,1150,1280,1320,1300,1200,1100,950]
                   )#双峰负荷曲线
-  p_g_min = np.array([200, 200, 150, 120, 70])
-  p_g_max = np.array([460, 400, 350, 300, 150])
-  p_h_max = 280
-  remp_u_d = np.array([240, 210, 150, 120, 70])  # >=pgmin
-  t_on_and_off = np.array([8, 7, 6, 4, 3])
+  p_g_min = 0.25*np.array([200, 200, 150, 120, 70])
+  p_g_max = 0.25*np.array([460, 400, 350, 300, 150])
+  p_m_max = 1000
+  remp_u_d = 0.25*np.array([240, 210, 150, 120, 70])  # >=pgmin
+  t_on_and_off = np.array([3, 3, 3, 3, 3])
   a = 1e-5 * np.array([1.02, 1.21, 2.17, 3.42, 6.63])
   b = np.array([0.277, 0.288, 0.29, 0.292, 0.306])
   c = np.array([9.2, 8.8, 7.2, 5.2, 3.5])
@@ -44,11 +39,9 @@ def mainProblem_iterate_min(model1:gp.Model,uout:dict):
   theta = 0.01
   yita = 0.95
   kees = 0.009
-  # 碳交易
-  w = 50
-  d = 100
-  tao = 0.25
+  
   #碳排放因子
+  coef = np.array([0.72,0.5306])
   #___________
   # 循环控制变量
   # 时间
@@ -93,13 +86,24 @@ def mainProblem_iterate_min(model1:gp.Model,uout:dict):
       c_gi = a[i]*p_g_2[i,t]+ b[i]*p_g[i,t]+ c[i]
       c_u =c_u+ sit[i]*(u_start[i,t]+u_stop[i,t])
       c_g +=c_gi
-  
-  #水电：
+
+  #电市场交易：
   #变量：
-  p_h = model1.addMVar((1,T),vtype=GRB.CONTINUOUS,lb=0,name = "水电出力")
-  # 约束：
-  model1.addConstr(p_h<=p_h_max)
-  # 成本：无
+  p_buy = model1.addMVar((1,T),vtype=GRB.CONTINUOUS,name = "电交易出力")
+  p_sell = model1.addMVar((1,T),vtype=GRB.CONTINUOUS,name = "电交易出力")
+  u_buy = uout["ubuy"]
+  u_sell = uout["usell"]
+  #联络线约束
+  model1.addConstr(p_buy>=0)
+  model1.addConstr(p_buy<=p_m_max*u_buy)
+  model1.addConstr(p_sell>=0)
+  model1.addConstr(p_sell<=p_m_max*u_sell)
+  #model1.addConstr(u_sell+u_buy<=1)
+  # 成本：
+  c_m=0
+  for t in range(T):
+    c_m +=50*p_buy[0,t]+10*p_sell[0,t]
+  
   
   #储能：
   soc_init = 0.5
@@ -131,11 +135,11 @@ def mainProblem_iterate_min(model1:gp.Model,uout:dict):
   u_v = model1.addMVar((1,T),vtype=GRB.BINARY,name="光电运行状态")
   #约束：
   model1.addConstr(gp.quicksum(u_w[0,t].item() for t in range(T))<=F)
-  model1.addConstr(gp.quicksum(u_v[0,t].item() for t in range(T))<=F)
+  model1.addConstr(gp.quicksum(u_v[0,t].item() for t in range(T))<=F) 
   model1.addConstr(p_w == pw_f-u_w*d_p_w_max*pw_f)#箱式边界的下界
   model1.addConstr(p_v == pv_f-u_v*d_p_v_max*pv_f)
   #成本:主要是弃风光惩罚
-  c_wvt = 500*(pw_f-p_w)+500*(pv_f-p_v)
+  c_wvt = 50*(pw_f-p_w)+50*(pv_f-p_v)
   c_wv=0
   for t in range(T):
     c_wv +=c_wvt[0,t]
@@ -153,19 +157,37 @@ def mainProblem_iterate_min(model1:gp.Model,uout:dict):
       p_g_i_temp = gp.quicksum(p_g[n, t].item() for n in range(n_g))
       model1.addConstr(p_g_i[0,t]== p_g_i_temp)
   #model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_h-p_g_i==0)
-  model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_h-p_g_i==0)
+  model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_buy+p_sell-p_g_i==0)
   
   for t in range(24):
       pgmaxsum_temp = gp.quicksum(u_g[n, t].item() * p_g_max[n] for n in range(n_g))
       model1.addConstr(pgmaxsum[0,t] == pgmaxsum_temp)
   #model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_h-pgmaxsum<=0)
-  model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_h-pgmaxsum<=0)
+  model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_buy+p_sell-pgmaxsum<=0)
+
+  #碳排放配额补足交易,考虑使用二次项近似谈阶梯价格，然后再线性化，提升估算精度，单位为天
+  EF_c = model1.addVar(vtype=GRB.CONTINUOUS,name = "碳排放补足量")
+  #EF_c_2 = model1.addVar(vtype=GRB.CONTINUOUS,lb=0,ub=250000,name = "碳排放补足量二次项")
+  #lxefc2=np.linspace(start =0,stop=500,num=11).reshape(1,-1)
+  #lyefc2 = lxefc2**2
+  #model1.addGenConstrPWL(EF_c,EF_c_2 , lxefc2[0],lyefc2[0])
+  model1.addConstr(-EF_c<=0)
+  model1.addConstr(EF_c<=500)
+  #碳排放约束，补足量使得碳排放量达到零碳园区的水平
+  EF = gp.quicksum((coef[0]-0.0246)*p_g_i[0,t]+(coef[1]-0.0246)*p_buy[0,t]-(coef[1]-0.0246)*p_sell[0,t]-0.0246*p_w[0,t]-0.0246*p_v[0,t]-EF_c  for t in range(24))
+  model1.addConstr(EF==0)
+
+
 #使用KKT条件转化为max：乘子始终对应“≤ 0”形式的约束，且非负。
 #M取值
   M=10000
   #功率平衡约束对偶变量  
   dl_peq = model1.addMVar((1,T),vtype=GRB.CONTINUOUS,name="功率平衡约束对偶变量")
   dl_prot = model1.addMVar((1,T),vtype=GRB.CONTINUOUS,lb=0,name="旋转备用约束对偶变量")
+  #碳约束对偶变量与互补松弛
+  dl_efc_min = model1.addVar(vtype=GRB.CONTINUOUS,lb=0,name = "碳排放补足量的对偶")
+  dl_ef_syn = model1.addVar(vtype=GRB.CONTINUOUS,name = "碳排放约束的对偶")
+  dl_efc_max = model1.addVar(vtype=GRB.CONTINUOUS,lb=0,name = "碳排放buzuuhxm的对偶")
 #火电对偶变量
   
   dl_p_g_max = model1.addMVar((n_g,T),vtype=GRB.CONTINUOUS,lb=0,name="功率上限对偶变量")
@@ -173,10 +195,11 @@ def mainProblem_iterate_min(model1:gp.Model,uout:dict):
   dl_remp_g_max = model1.addMVar((n_g,T),vtype=GRB.CONTINUOUS,lb=0,name="爬坡约束对偶变量")
   dl_remp_g_min = model1.addMVar((n_g,T),vtype=GRB.CONTINUOUS,lb=0,name="爬坡下限对偶变量")
   
-  #水电约束对偶变量：
-  dl_ph_max= model1.addMVar(shape = (1,T),vtype=GRB.CONTINUOUS,lb=0,name="水电上限对偶")
-  dl_ph_min= model1.addMVar(shape = (1,T),vtype=GRB.CONTINUOUS,lb=0,name="水电下限对偶")
-  
+  #联络线对偶变量：
+  dl_p_buy_max= model1.addMVar(shape = (1,T),vtype=GRB.CONTINUOUS,lb=0,name="电网受入上限对偶")
+  dl_p_buy_min= model1.addMVar(shape = (1,T),vtype=GRB.CONTINUOUS,lb=0,name="电网受入下限对偶")
+  dl_p_sell_max= model1.addMVar(shape = (1,T),vtype=GRB.CONTINUOUS,lb=0,name="电网外送上限对偶")
+  dl_p_sell_min= model1.addMVar(shape = (1,T),vtype=GRB.CONTINUOUS,lb=0,name="电网外送下限对偶")
   #对偶可行性，不等式约束下限为零，等式约束不限制
   
   #互补松弛 对偶变量与原来的约束只有一个取到等号，不等式约束为取到等号的时候，其对偶变量必然不为0，
@@ -205,38 +228,59 @@ def mainProblem_iterate_min(model1:gp.Model,uout:dict):
       model1.addConstr(-p_g[i,t]+u_g[i,t]*p_g_min[i]>=-M*(1-z4))
   
   for t in range(T):    
-  #水电互补松弛：
+  #联络线互补松弛：
     z5 =model1.addVar(vtype=GRB.BINARY)
-    model1.addConstr(dl_ph_max[0,t] <= M * z5)
-    model1.addConstr(p_h[0,t]-p_h_max>=-M*(1-z5))
+    model1.addConstr(dl_p_buy_max[0,t] <= M * z5)
+    model1.addConstr(p_buy[0,t]-p_m_max*u_buy[0,t]>=-M*(1-z5))
     z6=model1.addVar(vtype=GRB.BINARY)
-    model1.addConstr(dl_ph_min[0,t] <= M * z6)
-    model1.addConstr(-p_h[0,t]>=-M*(1-z6))
+    model1.addConstr(dl_p_buy_min[0,t] <= M * z6)
+    model1.addConstr(-p_buy[0,t]>=-M*(1-z6))
+    z7 =model1.addVar(vtype=GRB.BINARY)
+    model1.addConstr(dl_p_sell_max[0,t] <= M * z7)
+    model1.addConstr(p_sell[0,t]-p_m_max*u_sell[0,t]>=-M*(1-z7))
+    z8=model1.addVar(vtype=GRB.BINARY)
+    model1.addConstr(dl_p_sell_min[0,t] <= M * z8)
+    model1.addConstr(-p_sell[0,t]>=-M*(1-z8))
   
+
   #平稳性 拉格朗日函数为所有目标函数+对偶变量乘以约束，拉格朗日函数对原始优化变量的导数为0
   #火电平稳性：求出拉格朗日函数，对每个变量求偏导，结果相加等于0
   for i in range(n_g):
     for t in range(T):
       if t==0:
-        D_lagrange_p_g = a[i]*p_g[i,t]+b[i]+dl_p_g_max[i,t]-dl_p_g_min[i,t]+dl_remp_g_max[i,t]-dl_remp_g_max[i,t+1]+dl_p_g_min[i,t+1]-dl_peq[0,t] 
+        D_lagrange_p_g = a[i]*p_g[i,t]+b[i]+dl_p_g_max[i,t]-dl_p_g_min[i,t]+dl_remp_g_max[i,t]-dl_remp_g_max[i,t+1]+dl_p_g_min[i,t+1]-dl_peq[0,t]+(coef[0]-0.0246)*dl_ef_syn 
       elif t==23:
-        D_lagrange_p_g = a[i]*p_g[i,t]+b[i]+dl_p_g_max[i,t]-dl_p_g_min[i,t]+dl_remp_g_max[i,t]-dl_p_g_min[i,t]-dl_peq[0,t] 
+        D_lagrange_p_g = a[i]*p_g[i,t]+b[i]+dl_p_g_max[i,t]-dl_p_g_min[i,t]+dl_remp_g_max[i,t]-dl_p_g_min[i,t]-dl_peq[0,t] +(coef[0]-0.0246)*dl_ef_syn
       else:
-        D_lagrange_p_g = a[i]*p_g[i,t]+b[i]+dl_p_g_max[i,t]-dl_p_g_min[i,t]+dl_remp_g_max[i,t]-dl_remp_g_max[i,t+1]-dl_remp_g_min[i,t]+dl_remp_g_min[i,t+1]-dl_peq[0,t]
+        D_lagrange_p_g = a[i]*p_g[i,t]+b[i]+dl_p_g_max[i,t]-dl_p_g_min[i,t]+dl_remp_g_max[i,t]-dl_remp_g_max[i,t+1]-dl_remp_g_min[i,t]+dl_remp_g_min[i,t+1]-dl_peq[0,t]+(coef[0]-0.0246)*dl_ef_syn
       model1.addConstr(D_lagrange_p_g==0)  
-  #水电平稳性：
-  model1.addConstr(dl_ph_max-dl_ph_min-dl_prot-dl_peq==0)
+  
+  #联络线平稳性：
+  for t in range(24):
+    model1.addConstr(50+dl_p_buy_max[0,t]-dl_p_buy_min[0,t]-dl_prot[0,t]-dl_peq[0,t]+(coef[1]-0.0246)*dl_ef_syn==0)
+    model1.addConstr(10+dl_p_sell_max[0,t]-dl_p_sell_min[0,t]+dl_prot[0,t]+dl_peq[0,t]-(coef[1]-0.0246)*dl_ef_syn==0)
+  
+  
+  #efcomplement的平稳性
+  model1.addConstr(10-dl_efc_min+dl_efc_max-dl_ef_syn==0)
+  #碳约束互补松弛
+  z_efc_min  =model1.addVar(vtype=GRB.BINARY)
+  z_efc_max  =model1.addVar(vtype=GRB.BINARY)
+  model1.addConstr(dl_efc_min<= M * z_efc_min)
+  model1.addConstr(-EF_c>=-M*(1-z_efc_min))
+  model1.addConstr(dl_efc_max<= M * z_efc_max)
+  model1.addConstr(EF_c-500>=-M*(1-z_efc_max))
   
   
   #储能
-  dl_p_ch_max   = model1.addMVar((1,T), lb=0,name="储能充电上限约束对偶")
-  dl_p_dis_max  = model1.addMVar((1,T), lb=0,name="储能放电上限约束对偶")
+  dl_p_ch_max  = model1.addMVar((1,T), lb=0,name="储能充电上限约束对偶")
+  dl_p_dis_max = model1.addMVar((1,T), lb=0,name="储能放电上限约束对偶")
   dl_soc       = model1.addMVar((1,T), vtype=GRB.CONTINUOUS,name="soc等式递推约束对偶")
-  dl_soc_max  = model1.addMVar((1,T), lb=0,name="soc上限约束对偶")
-  dl_soc_min  = model1.addMVar((1,T), lb=0,name="soc下限约束对偶")
+  dl_soc_max   = model1.addMVar((1,T), lb=0,name="soc上限约束对偶")
+  dl_soc_min   = model1.addMVar((1,T), lb=0,name="soc下限约束对偶")
   dl_p_ch_min  = model1.addMVar((1,T), lb=0,name="储能充电下限约束对偶")
   dl_p_dis_min = model1.addMVar((1,T), lb=0,name="储能放电下限约束对偶")
-  dl_soc_blc       = model1.addVar(vtype=GRB.CONTINUOUS,name="储能放电平衡循环约束对偶")
+  dl_soc_blc   = model1.addVar(vtype=GRB.CONTINUOUS,name="储能放电平衡循环约束对偶")
   
   # ===================== 稳定性条件（全部线性！）=====================
   for t in range(T):
@@ -255,7 +299,6 @@ def mainProblem_iterate_min(model1:gp.Model,uout:dict):
           - dl_p_dis_min[0,t]-dl_peq[0,t]-dl_prot[0,t] == 0,
           name=f"stat_pdis_{t}"
       )
-  "!!!!!!!!!!!!!!!!!!!!!下面的储能稳定性约束是问题的来源!!!!!!!!!!!!!!!!!!!!!!"
   
   # 对 soc_t 的稳定性（t < T-1）
   for t in range(0,T-2):
@@ -313,33 +356,36 @@ def mainProblem_iterate_min(model1:gp.Model,uout:dict):
   z_net = model1.addMVar((1,T), vtype=GRB.BINARY)
   for t in range(T):
     model1.addConstr(dl_prot[0,t] <= M * z_net[0,t])
-    model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_h-pgmaxsum>= -M * (1 - z_net[0,t]))
+    model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_buy+p_sell-pgmaxsum>= -M * (1 - z_net[0,t]))
 
   #目标函数加入KKT条件后失效，直接并入外层的max 
   '''
   ------------------------------------------------------------------
   '''
   C = model1.addVar(vtype=GRB.CONTINUOUS,name="子问题最恶劣场景下的成本")
-  model1.addConstr( C <= c_ees+c_g+c_wv)
+  model1.addConstr( C <= c_ees+c_g+c_wv+EF_c*5+c_m)
   '''
   -------------------------------------------------------------------
   '''
+
   #model1.Params.NonConvex = 2
   model1.setParam(GRB.Param.OptimalityTol, 1e-8)
   model1.setParam(GRB.Param.FeasibilityTol, 1e-8)  
   model1.setObjective(C+c_u, GRB.MAXIMIZE)
   model1.optimize()
-  if model1.status != GRB.OPTIMAL:
+
+  print(model1.status)
+  if model1.status == GRB.INFEASIBLE:
       print("Model is infeasible. Computing IIS...")
-      model1.computeIIS()
-      model1.write("infeasible.ilp")
+      
       print("IIS written to 'infeasible.ilp'")
   elif model1.status == GRB.UNBOUNDED:
       print("IIS written to 'infeasible.ilp un'")
   else:
+    print(f" 子问题碳补足的量{EF_c.X}")
     UBin = model1.ObjVal
     P_G = p_g.X
-    P_H = p_h.X
+    P_BUY = p_buy.X
     P_W = p_w.X
     P_CH = p_ch.X
     P_DIS = p_dis.X
@@ -347,9 +393,11 @@ def mainProblem_iterate_min(model1:gp.Model,uout:dict):
     soc = soc.X
     U_V=u_v.X
     U_W =u_w.X 
+    P_SELL=p_sell.X
     rst = {
       "p_g": P_G,
-      "P_H": P_H,
+      "p_buy": P_BUY,
+      "p_selll": P_SELL,
       "p_ch": P_CH,
       "p_dis": P_DIS,
       "soc": soc,

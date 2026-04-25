@@ -1,7 +1,7 @@
 from pyexpat import model
 import gurobipy as gp
 import numpy as np
-from gurobipy import GRB
+from gurobipy import GRB, quicksum
 '''
 主问题的优化变量为x和y，固定的优化变量为u,每次子问题都会更新与u有关的约束
 '''
@@ -26,7 +26,7 @@ def mainProblem_init(model1:gp.Model,uin:dict,o):
   '''
   交易
   '''
-  p_m_max = 1000
+  p_m_max = 800
   remp_u_d = 0.25*np.array([240, 210, 150, 120, 70])  # >=pgmin
   t_on_and_off = np.array([3, 3, 3, 3, 3])
   a = 1e-5 * np.array([1.02, 1.21, 2.17, 3.42, 6.63])
@@ -49,7 +49,7 @@ def mainProblem_init(model1:gp.Model,uin:dict,o):
 
   #碳排放因子,依次为火电，电网，碳排放因子数据来自
   #国家温室气体排放因子数据库：https://data.ncsc.org.cn/factories/index
-
+  efc_max =400
   coef = np.array([0.72,0.5306])
   #___________
   # 循环控制变量
@@ -117,13 +117,12 @@ def mainProblem_init(model1:gp.Model,uin:dict,o):
     model1.addConstr(-p_sell<=0)
     model1.addConstr(p_sell<=p_m_max*u_sell)
     model1.addConstr(u_sell+u_buy<=1)
-    #联络线平稳性约束
+    
 
     # 成本：
     c_m=0
     for t in range(T):
       c_m +=50*p_buy[0,t]+10*p_sell[0,t]
-    
     #储能：
     soc_init = 0.5
     # 变量：
@@ -181,31 +180,40 @@ def mainProblem_init(model1:gp.Model,uin:dict,o):
         p_g_i_temp = gp.quicksum(p_g[n, t].item() for n in range(n_g))
         model1.addConstr(p_g_i[0,t]== p_g_i_temp)
     #model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_h-p_g_i==0)
-    model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_buy+p_sell-p_g_i==0)
+    model1.addConstr(p_l_b+p_ch-p_dis-p_buy+p_sell-p_w-p_v-p_g_i==0)
     
     for t in range(24):
         pgmaxsum_temp = gp.quicksum(u_g[n, t].item() * p_g_max[n] for n in range(n_g))
         model1.addConstr(pgmaxsum[0,t] == pgmaxsum_temp)
-    model1.addConstr(p_l_b+p_ch-p_dis-p_w-p_v-p_buy+p_sell-pgmaxsum<=0)
+    model1.addConstr(p_l_b+p_ch-p_dis-p_buy+p_sell-p_w-p_v-pgmaxsum<=0)
 
     #碳排放配额补足交易,考虑使用二次项近似谈阶梯价格，然后再线性化，提升估算精度，单位为天
-    EF_c = model1.addVar(vtype=GRB.CONTINUOUS,name = "碳排放补足量")
+    EF_c_buy = model1.addMVar((1,24),vtype=GRB.CONTINUOUS,name = "碳排放补足量")
+    u_efc_buy = model1.addMVar((1,24),vtype=GRB.BINARY,name = "碳市场补足状态")
+    EF_c_sell = model1.addMVar((1,24),vtype=GRB.CONTINUOUS,name = "碳排放卖出量")
+    u_efc_sell = model1.addMVar((1,24),vtype=GRB.BINARY,name = "碳市场卖出状态")
     #EF_c_2 = model1.addVar(vtype=GRB.CONTINUOUS,name = "碳排放补足量二次项")
     #lxefc2=np.linspace(start =0,stop=500,num=11).reshape(1,-1)
     #lyefc2 = lxefc2**2
     
     #model1.addGenConstrPWL(EF_c,EF_c_2 , lxefc2[0],lyefc2[0])
-    model1.addConstr(EF_c>=0)
-    model1.addConstr(EF_c<=500)
+    model1.addConstr(EF_c_buy>=0)
+    model1.addConstr(EF_c_buy<=efc_max*u_efc_buy)
+    model1.addConstr(EF_c_sell>=0)
+    model1.addConstr(EF_c_sell<=efc_max*u_efc_sell)
+    model1.addConstr(u_efc_buy+u_efc_sell<=1)
     #碳排放约束，补足量使得碳排放量达到零碳园区的水平
-    EF = gp.quicksum((coef[0]-0.0246)*p_g_i[0,t]+(coef[1]-0.0246)*p_buy[0,t]-(coef[1]-0.0246)*p_sell[0,t]-0.0246*p_w[0,t]-0.0246*p_v[0,t]-EF_c  for t in range(24))
-    model1.addConstr(EF==0)
+    #EF = gp.quicksum((coef[0]-0.0246)*p_g_i[0,t]+(coef[1]-0.0246)*p_buy[0,t]-(coef[1]-0.0246)*p_sell[0,t]-0.0246*p_w[0,t]-0.0246*p_v[0,t]-EF_c[0,t]  for t in range(24))
+    for t in range(T):
+      EF = (coef[0]-0.0246)*p_g_i[0,t]+(coef[1]-0.0246)*p_buy[0,t]-(coef[1]-0.0246)*p_sell[0,t]-0.0246*p_w[0,t]-0.0246*p_v[0,t]-EF_c_buy[0,t]*u_efc_buy[0,t]+EF_c_sell[0,t]*u_efc_sell[0,t]
 
+      model1.addConstr(EF==0)
+    c_efc=gp.quicksum(EF_c_buy[0,t].item()-EF_c_sell[0,t].item() for t in range(24))
     '''
     ------------------------------------------------------------------
     '''
-    C = model1.addVar(1,vtype=GRB.CONTINUOUS,name="子问题最恶劣场景下的成本c")
-    model1.addConstr( C >=c_ees+c_g+c_wv+EF_c*5+c_m)
+    C = model1.addVar(1,vtype=GRB.CONTINUOUS,name="成本c")
+    model1.addConstr( C >=c_ees+c_g+c_wv+c_efc+c_m)
     '''
     -------------------------------------------------------------------
     '''
@@ -228,7 +236,7 @@ def mainProblem_init(model1:gp.Model,uin:dict,o):
     U_dis = u_dis.X
     LB = model1.ObjVal
     np.set_printoptions(formatter={'float_kind': '{:.2f}'.format})
-    print(f" 碳补足的量{EF_c.X}")
+    print(f" 碳补足的量{EF_c_buy.X}\n{EF_c_sell.X}")
     rst ={ 
             "p_g":p_g.X,
             "p_buy":p_buy.X,
@@ -238,12 +246,15 @@ def mainProblem_init(model1:gp.Model,uin:dict,o):
             "soc":soc.X,
             "p_w":p_w.X,
             "p_v":p_v.X,
-
+            "efcbuy":EF_c_buy.X,
+            "efcsell":EF_c_sell.X,
             "ustart":U_start,
             "ustop":U_stop,
             "ug":U_g,
             "uch":U_ch,
             "udis":U_dis,
+            "uefc_buy":u_efc_buy.X,
+            "uefc_sell":u_efc_sell.X,
             "ubuy":u_buy.X,
             "usell":u_sell.X,
             "LB":LB,

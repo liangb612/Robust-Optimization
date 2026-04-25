@@ -24,8 +24,11 @@ class mainProblemAddConstration:
     "u_g": model1.addMVar((n_g,T),vtype= GRB.BINARY,name=f"添加火电启停状态{o}"),
     "u_start": model1.addMVar((n_g,T),vtype= GRB.BINARY,name=f"添加火电启动时刻{o}"),
     "u_stop": model1.addMVar((n_g,T),vtype=GRB.BINARY,name =f"添加火电机组停止时刻{o}"),
-      #水电变量：
-    "p_h": model1.addMVar((1,T),vtype=GRB.CONTINUOUS,lb=0,name = f"添加水电出力{o}"),
+      #联络线变量：
+    "p_buy": model1.addMVar((1,T),vtype=GRB.CONTINUOUS,lb=0,name = f"电网购电{o}"),
+    "p_sell":model1.addMVar((1,T),vtype=GRB.CONTINUOUS,lb=0,name = f"电网售出电{o}"),
+    "u_buy": model1.addMVar((1,T),vtype=GRB.BINARY,name = f"电网购买状态{o}"),
+    "u_sell": model1.addMVar((1,T),vtype=GRB.BINARY,name = f"电网售出状态{o}"),
     # 储能变量：
     "soc": model1.addMVar((1,T),vtype=GRB.CONTINUOUS,lb = socmin,ub = socmax,name = f"添加电量百分比{o}"),
     "p_ch": model1.addMVar((1,T),vtype=GRB.CONTINUOUS,lb=0,name=f"添加储能充电功率{o}"),
@@ -37,7 +40,11 @@ class mainProblemAddConstration:
     "p_v": model1.addMVar((1,T),vtype=GRB.CONTINUOUS,lb = 0,name=f"添加光电出力{o}"),
      #电网变量
     "p_g_i":model1.addMVar((1, 24), vtype=GRB.CONTINUOUS,name=f"添加某时段火电{o}"),
-    "pgmaxsum":model1.addMVar((1, 24), vtype=GRB.CONTINUOUS,name=f"添加某时段火电最大{o}")
+    "pgmaxsum":model1.addMVar((1, 24), vtype=GRB.CONTINUOUS,name=f"添加某时段火电最大{o}"),
+    "efc_buy": model1.addMVar((1,24),vtype=GRB.CONTINUOUS,name = "碳排放补足量"),
+    "u_efc_buy":model1.addMVar((1,24),vtype=GRB.BINARY,name = "碳市场补足状态"),
+    "efc_sell": model1.addMVar((1,24),vtype=GRB.CONTINUOUS,name = "碳排放卖出量"),
+    "u_efc_sell":model1.addMVar((1,24),vtype=GRB.BINARY,name = "碳市场卖出状态"),
     }
   @staticmethod
   def addConstrations(Vars,model1,uin,o,cadd):
@@ -125,7 +132,6 @@ class mainProblemAddConstration:
     
     #水电：
     # 约束：
-    model1.addConstr(Vars["p_h"]<=p_h_max)
     # 成本：无
     
     #储能：
@@ -202,6 +208,7 @@ class mainProblemAddConstration:
       U_g= Vars["u_g"].X
       U_ch = Vars["u_ch"].X
       U_dis = Vars["u_dis"].X
+      
       LB = model1.ObjVal
       np.set_printoptions(formatter={'float_kind': '{:.2f}'.format})
       rst ={ 

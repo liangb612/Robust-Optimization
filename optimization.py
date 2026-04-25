@@ -23,18 +23,26 @@ def main():
    # print(f"u_w_init:{u_w_init}")
     #print(f"u_v_init:{u_v_init}")
     uout = model1.mainProblem_init(modelm,uin_init,0)
+    
+    print(uout)
     uin = model3.mainProblem_iterate_min(models,uout)
-    while abs(uout["LB"]-uin["UBin"])>=4000 :
+    residual_save = [abs(uout["LB"]-uin["UBin"])]
+    while abs(uout["LB"]-uin["UBin"])>=500 :
         uout = model1.mainProblem_init(modelm,uin,0)
-        if abs(uout["LB"]-uin["UBin"])>=4000:
+        residual_save.append(abs(uout["LB"]-uin["UBin"]))
+        if abs(uout["LB"]-uin["UBin"])<=500:
+            residual_save.append(abs(uout["LB"]-uin["UBin"]))
+            print(uout)
             break
-        uin = model3.mainProblem_iterate_min(models,uout)
+        modelsp = gp.Model()
+        uin = model3.mainProblem_iterate_min(modelsp,uout)
+        modelsp.dispose()
     '''
     while abs(uout["LB"]-uin["UBin"])>=100 :
         ubLast = uin["UBin"]
         o=1
-        #addCons = model2.mainProblemAddConstration(modelm,uin,o,uout)
-        #uout = addCons.rst
+        addCons = model2.mainProblemAddConstration(modelm,uin,o,uout)
+        uout = addCons.rst
         uout = model1.mainProblem_init(modelm,uin,0)
         uin = model3.mainProblem_iterate_min(models,uout)
 
@@ -52,6 +60,7 @@ def main():
             uout["p_g"][3,:],  
             uout["p_g"][4,:],  
             uout["p_buy"],
+            uout["p_sell"],
             -uout["p_ch"],
             uout["p_dis"],
             uout["p_w"],
@@ -74,6 +83,7 @@ def main():
         "#7f7f7f",
         "#bcbd22",
         "#17becf",
+        "#aec7e8",
     ]
      # 设置图例和标签
     legends=[
@@ -82,18 +92,19 @@ def main():
             "thermal generator3",
             "thermal generator4",
             "thermal generator5",
-            "hydropower generator",
+            "market buy",
+            "market sell",
             "ESS charge",
             "ESS discharge",
             "wind power",
             "photovoltaic",
         ]
 
-    '''    
+        
     #保存数据
     df = pd.DataFrame(tt,columns=range(24),index=legends)
     df.to_csv("output1.csv",index=True)
-    '''
+    
     for i, data in enumerate(tt):
         if (data>=0).all():
             plt.bar(
@@ -126,6 +137,12 @@ def main():
     soc = uout["soc"]
     x = np.array(list(range(24)))
     plt.plot(x,soc[0],label="soc")
+    plt.grid(True)
+
+    
+    plt.figure()
+    residual_save = np.array(residual_save)
+    plt.plot(range(len(residual_save)),residual_save,label="Residual")
     plt.grid(True)
     plt.show()
     
